@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Maquetas - HMI v3.37 Final</title>
+    <style>
+        /* --- VARIABLES CSS --- */
+        :root {
+            --bg-body: #1a1a2e; --bg-card: #16213e; --text-main: #ffffff; --text-accent: #e94560; --border: #333;
+            --bg-slot: rgba(0,0,0,0.2); --switch-off: #ccc; --slot-border: transparent;
+            --terminal-bg: #0f0f1a; --terminal-text: #00ff00; --terminal-tx: #00d2ff;
+            --led-off: #444; --led-blue: #00d2ff; --led-red: #ff3333; --led-green: #00ff00; --led-yellow: #ffeb3b;
+            --temp-color: #ff5722; --hum-color: #00bcd4; --buzzer-color: #e040fb; --ir-color: #aa00ff; --ldr-color: #ffc107;
+            --temp-a2-color: #e53935; --pot-color: #00e676; 
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-body); color: var(--text-main); margin: 0; padding: 20px; text-align: center; transition: 0.3s; min-width: 1024px; }
+        h1 { border-bottom: 2px solid var(--text-accent); padding-bottom: 10px; display: inline-block; }
+
+        .control-bar { display: flex; gap: 20px; max-width: 1400px; margin: 20px auto; align-items: flex-start; }
+        .comms-panel { flex: 3; background-color: var(--bg-card); padding: 20px; border-radius: 12px; border: 1px solid var(--border); text-align: left; display: flex; flex-direction: column; }
+        .comms-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .theme-panel { flex: 1; background-color: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
+        
+        button.btn-connect { background-color: var(--text-accent); color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        
+        /* TERMINAL ROBUSTO */
+        #terminal { background-color: var(--terminal-bg); color: var(--terminal-text); font-family: 'Courier New', monospace; height: 200px; max-height: 200px; overflow-y: auto; padding: 10px; border: 1px solid #555; font-size: 0.85rem; border-radius: 4px; scroll-behavior: smooth; white-space: pre-wrap; }
+        .log-tx { color: var(--terminal-tx); font-weight: bold; } .log-rx { color: var(--terminal-text); }
+
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1400px; margin: 20px auto; }
+        .card { background-color: var(--bg-card); border-radius: 12px; padding: 15px; border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; transition: 0.3s; }
+        .card h3 { color: var(--text-accent); margin: 0 0 10px 0; font-size: 1rem; border-bottom: 1px solid var(--border); width: 100%; padding-bottom: 5px; }
+        .card-wide { grid-column: span 2; }
+
+        /* LEDS */
+        .led-indicator { width: 45px; height: 45px; border-radius: 50%; background-color: var(--led-off); margin: 10px 0; border: 2px solid #666; transition: 0.2s; }
+        .led-indicator.active.blue { background-color: var(--led-blue); box-shadow: 0 0 15px var(--led-blue); }
+        .led-indicator.active.red { background-color: var(--led-red); box-shadow: 0 0 15px var(--led-red); }
+        .led-indicator.active.yellow { background-color: var(--led-yellow); box-shadow: 0 0 15px var(--led-yellow); }
+        
+        /* SWITCHES */
+        .switch { position: relative; display: inline-block; width: 50px; height: 26px; } .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-sw { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--switch-off); transition: .4s; border-radius: 34px; }
+        .slider-sw:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider-sw { background-color: var(--text-accent); } input:checked + .slider-sw:before { transform: translateX(24px); }
+        
+        /* LDR GAUGE SVG */
+        .ldr-gauge-svg { width: 200px; height: 110px; margin-top: 10px; filter: drop-shadow(0 0 5px rgba(255, 193, 7, 0.3)); }
+        .ldr-base { fill: none; stroke: #444; stroke-width: 15; stroke-linecap: round; }
+        .ldr-progress { 
+            fill: none; stroke: var(--ldr-color); stroke-width: 15; stroke-linecap: round; 
+            stroke-dasharray: 252; stroke-dashoffset: 252; transition: stroke-dashoffset 0.4s ease-out; 
+        }
+        .ldr-text { fill: var(--ldr-color); font-weight: bold; font-size: 18px; font-family: sans-serif; }
+
+        /* POT VELOCÍMETRO */
+        .speedo-track { position: absolute; bottom: 0; width: 160px; height: 80px; border-top-left-radius: 90px; border-top-right-radius: 90px; border: 12px solid #444; border-bottom: 0; box-sizing: border-box; }
+        .speedo-needle { position: absolute; bottom: 0; left: 50%; width: 4px; height: 65px; background-color: var(--pot-color); transform-origin: bottom center; transform: translateX(-50%) rotate(-90deg); transition: 0.3s; z-index: 10; border-radius: 2px; }
+        .speedo-needle::after { content: ''; position: absolute; bottom: -5px; left: -3px; width: 10px; height: 10px; background-color: #fff; border-radius: 50%; }
+        .speedo-value { position: absolute; bottom: -45px; font-size: 1.5rem; font-weight: bold; color: var(--pot-color); }
+
+        /* TERMÓMETRO REALISTA A2 */
+        .thermometer-realistic { display: flex; align-items: flex-end; gap: 12px; height: 160px; margin-bottom: 10px; }
+        .thermo-glass { position: relative; width: 22px; height: 130px; background: rgba(255,255,255,0.1); border-radius: 10px 10px 0 0; border: 2px solid #555; border-bottom: none; }
+        .thermo-liquid { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 10px; background: var(--temp-a2-color); border-radius: 5px 5px 0 0; transition: 0.5s; height: 0%; }
+        .thermo-bulb { width: 32px; height: 32px; background: var(--temp-a2-color); border-radius: 50%; border: 2px solid #555; margin-top: -5px; }
+        .thermo-scale { display: flex; flex-direction: column; justify-content: space-between; height: 130px; color: #888; font-size: 0.75rem; font-family: monospace; margin-bottom: 30px; }
+
+        /* TERMÓMETRO DHT11 */
+        .temp-dht-wrapper { display: flex; align-items: flex-end; gap: 8px; }
+        .temp-scale-dht { display: flex; flex-direction: column; justify-content: space-between; height: 100px; color: #888; font-size: 0.65rem; font-family: monospace; padding-bottom: 5px; }
+        .temp-bar-container { width: 22px; height: 100px; background: #222; border-radius: 10px; position: relative; border: 1px solid #555; overflow: hidden; }
+        .temp-fill-dht { position: absolute; bottom: 0; width: 100%; background: var(--temp-color); transition: 0.5s; height: 0%; }
+        
+        .dht-container { display: flex; justify-content: space-around; width: 100%; align-items: center; margin-top: 10px; }
+        .donut-wrapper { position: relative; width: 85px; height: 85px; border-radius: 50%; background: conic-gradient(var(--hum-color) var(--p, 0%), #444 0%); display: flex; justify-content: center; align-items: center; transition: 0.5s; }
+        .donut-hole { width: 72%; height: 72%; background-color: var(--bg-card); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1rem; font-weight: bold; }
+
+        .ir-screen { width: 100%; height: 90px; background-color: var(--terminal-bg); color: var(--terminal-text); font-family: monospace; padding: 8px; border-radius: 4px; overflow-y: auto; font-size: 0.8rem; text-align: left; }
+        .rgb-group { display: flex; flex-direction: row; align-items: center; justify-content: center; background-color: var(--bg-slot); border: 1px solid var(--slot-border); padding: 10px; border-radius: 8px; flex: 1; }
+        input[type=range][orient=vertical] { writing-mode: bt-lr; -webkit-appearance: slider-vertical; height: 90px; }
+        input[type=range][disabled] { opacity: 0.2; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <h1>🎛️ Control de Maquetas - ESO/Bach</h1>
+
+    <div class="control-bar">
+        <div class="comms-panel">
+            <div class="comms-header">
+                <h3>🔌 Monitor Serie</h3>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <label style="font-size: 0.8rem; cursor: pointer; color: #aaa;">
+                        <input type="checkbox" id="chk-autoscroll" checked> ⬇️ Auto-Scroll
+                    </label>
+                    <span id="usb-status" style="color: #888;">Desconectado</span>
+                    <button class="btn-connect" onclick="initSerialConnection()">🔌 Conectar</button>
+                </div>
+            </div>
+            <div id="terminal">System Ready. Presione conectar...</div>
+        </div>
+        <div class="theme-panel">
+            <button class="btn-theme btn-dark" onclick="setTheme('dark')">🌙 Oscuro</button>
+            <button class="btn-theme btn-light" onclick="setTheme('light')" style="margin-top:5px;">☀️ Claro</button>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <div class="card"><h3>💡 Led D13 Azul</h3><div id="led-visual-13" class="led-indicator blue"></div><label class="switch"><input type="checkbox" id="sw-13" onchange="ctrlLed13()"><span class="slider-sw"></span></label></div>
+        <div class="card"><h3>💡 Led D12 Rojo</h3><div id="led-visual-12" class="led-indicator red"></div><label class="switch"><input type="checkbox" id="sw-12" onchange="ctrlLed12()"><span class="slider-sw"></span></label></div>
+        <div class="card"><h3>🔘 Pulsador D2</h3><div id="led-input-2" class="led-indicator yellow"></div><p style="font-size:0.7rem; opacity:0.6;">Entrada Digital</p></div>
+        <div class="card"><h3>🔘 Pulsador D3</h3><div id="led-input-3" class="led-indicator yellow"></div><p style="font-size:0.7rem; opacity:0.6;">Entrada Digital</p></div>
+        <div class="card"><h3>🔊 Buzzer D5</h3><div style="font-size: 2.5rem; margin: 10px;">🔊</div><button class="btn-connect" onmousedown="ctrlBuzzer(true)">▶ PLAY</button></div>
+
+        <div class="card">
+            <h3>🎚️ Potenciómetro A0</h3>
+            <div class="gauge-section" style="position:relative; width:160px; height:100px;">
+                <span class="tick tick-0" style="position:absolute; bottom:0; left:0; font-size:0.7rem; color:#888;">0</span>
+                <span class="tick tick-100" style="position:absolute; bottom:0; right:0; font-size:0.7rem; color:#888;">100</span>
+                <div class="speedo-track"></div>
+                <div id="pot-needle" class="speedo-needle"></div>
+                <div id="pot-val-text" class="speedo-value">0</div>
+            </div>
+            <p style="margin-top:45px; font-size:0.7rem; opacity:0.6;">0 - 100%</p>
+        </div>
+
+        <div class="card">
+            <h3>🌡️ Temp. Analógica A2</h3>
+            <div class="thermometer-realistic">
+                <div class="thermo-scale"><span>60</span><span>40</span><span>20</span><span>0</span></div>
+                <div style="display: flex; flex-direction: column; align-items: center;"><div class="thermo-glass"><div id="temp-a2-liquid" class="thermo-liquid"></div></div><div class="thermo-bulb"></div></div>
+            </div>
+            <div id="temp-a2-val-text" style="font-weight:bold; color:var(--temp-a2-color)">0.0ºC</div>
+        </div>
+
+        <div class="card">
+            <h3>☀️ Sensor Luz LDR A1</h3>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <svg viewBox="0 0 220 120" class="ldr-gauge-svg">
+                    <path class="ldr-base" d="M 30 100 A 80 80 0 0 1 190 100" />
+                    <path id="ldr-svg-fill" class="ldr-progress" d="M 30 100 A 80 80 0 0 1 190 100" />
+                    <text x="110" y="90" text-anchor="middle" id="ldr-val-text" class="ldr-text">0%</text>
+                </svg>
+                <span class="gauge-icon" style="font-size:1.5rem">☀️</span>
+            </div>
+        </div>
+
+        <div class="card"><h3>📡 Receptor IR D4</h3><div id="ir-screen" class="ir-screen">Listo...</div><button style="margin-top:5px; font-size:0.7rem;" onclick="document.getElementById('ir-screen').innerHTML=''">🗑️ Limpiar</button></div>
+        
+        <div class="card">
+            <h3>🌡️ DHT11 (Digital)</h3>
+            <div class="dht-container">
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <div class="temp-dht-wrapper">
+                        <div class="temp-scale-dht"><span>60</span><span>30</span><span>0</span></div>
+                        <div class="temp-bar-container">
+                            <div id="temp-fill" class="temp-fill-dht"></div>
+                        </div>
+                    </div>
+                    <div id="temp-val-text-dht" style="margin-top:8px; font-weight:bold; color:var(--temp-color); font-size: 1.1rem;">0.0ºC</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <div id="hum-chart" class="donut-wrapper">
+                        <div class="donut-hole"><span id="hum-val-text">0%</span></div>
+                    </div>
+                    <p style="font-size:0.8rem; margin-top:10px; font-weight: bold; color: var(--hum-color);">HUMEDAD</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-wide">
+            <h3>🎨 RGB Mixer (D9-R | D10-B | D11-G)</h3>
+            <div style="display:flex; width:100%; gap:15px;">
+                <div class="rgb-group">R <label class="switch"><input type="checkbox" id="sw-9" onchange="ctrlRGB(9)"><span class="slider-sw"></span></label><input type="range" id="slide-9" orient="vertical" min="0" max="255" value="0" disabled oninput="ctrlPWM(9, this.value)"></div>
+                <div class="rgb-group">B <label class="switch"><input type="checkbox" id="sw-10" onchange="ctrlRGB(10)"><span class="slider-sw"></span></label><input type="range" id="slide-10" orient="vertical" min="0" max="255" value="0" disabled oninput="ctrlPWM(10, this.value)"></div>
+                <div class="rgb-group">G <label class="switch"><input type="checkbox" id="sw-11" onchange="ctrlRGB(11)"><span class="slider-sw"></span></label><input type="range" id="slide-11" orient="vertical" min="0" max="255" value="0" disabled oninput="ctrlPWM(11, this.value)"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let port, writer, reader, isConnected = false, inputBuffer = "";
+
+        async function initSerialConnection() {
+            if (!("serial" in navigator)) return alert("Requiere Chrome o Edge.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const encoder = new TextEncoderStream(); encoder.readable.pipeTo(port.writable); writer = encoder.writable.getWriter();
+                const decoder = new TextDecoderStream(); port.readable.pipeTo(decoder.writable); reader = decoder.readable.getReader();
+                isConnected = true; document.getElementById("usb-status").innerText = "CONECTADO"; document.getElementById("usb-status").style.color = "#00ff00";
+                printToTerminal("Puerto Serie Conectado.", "rx");
+                readLoop();
+            } catch (err) { printToTerminal("Error: " + err.message, "rx"); }
+        }
+
+        async function readLoop() {
+            while (isConnected) {
+                try {
+                    const { value, done } = await reader.read();
+                    if (done) break; if (value) handleData(value);
+                } catch (err) { break; }
+            }
+        }
+
+        function handleData(text) {
+            inputBuffer += text;
+            let start = inputBuffer.indexOf('<'), end = inputBuffer.indexOf('>');
+            while (start !== -1 && end !== -1) {
+                if (end > start) {
+                    processCmd(inputBuffer.substring(start + 1, end));
+                    inputBuffer = inputBuffer.substring(end + 1);
+                } else { inputBuffer = inputBuffer.substring(start); }
+                start = inputBuffer.indexOf('<'); end = inputBuffer.indexOf('>');
+            }
+        }
+
+        function processCmd(msg) {
+            let [key, val] = msg.split(':');
+            if (key === "POT") {
+                let p = (parseFloat(val)/1023)*100;
+                document.getElementById("pot-needle").style.transform = `translateX(-50%) rotate(${(p*1.8)-90}deg)`;
+                document.getElementById("pot-val-text").innerText = Math.round(p);
+            } else if (key === "LDR") {
+                let rawVal = parseFloat(val);
+                const totalLength = 252;
+                const offset = totalLength - ((rawVal / 100) * totalLength);
+                document.getElementById('ldr-svg-fill').style.strokeDashoffset = offset;
+                document.getElementById("ldr-val-text").textContent = Math.round(rawVal) + "%";
+            } else if (key === "TEMPA2") {
+                // LOGICA DEL LM35
+                let temp = parseFloat(val);
+                let pct = (temp / 60) * 100; 
+                if (pct > 100) pct = 100; if (pct < 0) pct = 0;
+                document.getElementById("temp-a2-liquid").style.height = pct + "%";
+                document.getElementById("temp-a2-val-text").innerText = temp + "ºC";
+            } else if (key === "DHT11T") {
+                let temp = parseFloat(val);
+                let pct = (temp / 60) * 100;
+                if (pct > 100) pct = 100;
+                document.getElementById("temp-fill").style.height = pct + "%";
+                document.getElementById("temp-val-text-dht").innerText = temp + "ºC";
+            } else if (key === "DHT11H") {
+                document.getElementById("hum-chart").style.setProperty('--p', val + "%");
+                document.getElementById("hum-val-text").innerText = val + "%";
+            } else if (key === "IR") {
+                const s = document.getElementById("ir-screen");
+                const line = document.createElement("div");
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${val}`;
+                s.appendChild(line);
+                if(document.getElementById("chk-autoscroll").checked) s.scrollTop = s.scrollHeight;
+            } else if (key.startsWith("D") && val === "ON") {
+                let el = document.getElementById("led-input-" + key.substring(1));
+                if (el) { el.classList.add("active"); setTimeout(()=>el.classList.remove("active"), 500); }
+            }
+            printToTerminal(msg, "rx");
+        }
+
+        async function sendData(d) { if (isConnected && writer) { await writer.write(d + "\n"); printToTerminal(d, "tx"); } }
+        
+        function ctrlLed13() { sendData(document.getElementById("sw-13").checked ? "<D13:ON>" : "<D13:OFF>"); document.getElementById("led-visual-13").classList.toggle("active", document.getElementById("sw-13").checked); }
+        function ctrlLed12() { sendData(document.getElementById("sw-12").checked ? "<D12:ON>" : "<D12:OFF>"); document.getElementById("led-visual-12").classList.toggle("active", document.getElementById("sw-12").checked); }
+        function ctrlBuzzer(st) { if (st) sendData("<BUZ:PLAY>"); }
+        function ctrlRGB(p) { let ok = document.getElementById("sw-"+p).checked; sendData(ok ? `<PWM${p}:1>` : `<PWM${p}:0>`); document.getElementById("slide-"+p).disabled = !ok; if(ok) document.getElementById("slide-"+p).value = 255; else document.getElementById("slide-"+p).value = 0; }
+        function ctrlPWM(p, v) { if (document.getElementById("sw-"+p).checked) sendData(`<PWM${p}:${v}>`); }
+        
+        function printToTerminal(t, type) { 
+            const term = document.getElementById("terminal"); 
+            if (term.childElementCount > 100) term.removeChild(term.firstChild);
+            const div = document.createElement("div");
+            div.className = type === "tx" ? "log-tx" : "log-rx";
+            div.textContent = (type === "tx" ? "TX > " : "RX < ") + t;
+            term.appendChild(div);
+            if (document.getElementById("chk-autoscroll").checked) {
+                term.scrollTop = term.scrollHeight; 
+            }
+        }
+
+        function setTheme(m) {
+            const r = document.documentElement.style;
+            if (m === 'light') {
+                r.setProperty('--bg-body','#f0f2f5'); r.setProperty('--bg-card','#fff'); r.setProperty('--text-main','#333'); r.setProperty('--terminal-bg','#ddd'); r.setProperty('--bg-slot','#eee'); r.setProperty('--switch-off','#999'); r.setProperty('--slot-border','#ccc');
+            } else {
+                r.setProperty('--bg-body','#1a1a2e'); r.setProperty('--bg-card','#16213e'); r.setProperty('--text-main','#fff'); r.setProperty('--terminal-bg','#0f0f1a'); r.setProperty('--bg-slot','rgba(0,0,0,0.2)'); r.setProperty('--switch-off','#ccc'); r.setProperty('--slot-border','transparent');
+            }
+        }
+    </script>
+</body>
+</html>
