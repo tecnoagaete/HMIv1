@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P12: Sensor DHT11</title>
+    <style>
+        /* --- ESTILOS COMUNES v3.33 --- */
+        :root {
+            --bg-body: #1a1a2e; --bg-card: #16213e; --text-main: #ffffff; --text-accent: #e94560; --border: #333;
+            --terminal-bg: #0f0f1a; --terminal-text: #00ff00; --terminal-tx: #00d2ff;
+            /* Colores específicos */
+            --temp-color: #ff5722; 
+            --hum-color: #00bcd4; 
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-body); color: var(--text-main); margin: 0; padding: 20px; text-align: center; min-width: 800px; }
+        h1 { border-bottom: 2px solid var(--text-accent); padding-bottom: 10px; display: inline-block; }
+
+        .grid-container { display: flex; justify-content: center; gap: 30px; margin-top: 30px; flex-wrap: wrap; }
+        .card { background-color: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .card h3 { color: var(--text-accent); margin: 0 0 15px 0; border-bottom: 1px solid var(--border); width: 100%; padding-bottom: 10px; font-size: 1.2rem; }
+
+        button.btn-connect { background-color: var(--text-accent); color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-bottom: 10px; }
+        #terminal { background-color: var(--terminal-bg); color: var(--terminal-text); font-family: 'Consolas', monospace; height: 180px; width: 100%; overflow-y: auto; padding: 10px; border: 1px solid #555; font-size: 0.9rem; text-align: left; border-radius: 4px; box-sizing: border-box; }
+
+        /* --- VISUALIZACIÓN TEMPERATURA (Barra Vertical) --- */
+        .temp-wrapper { display: flex; align-items: flex-end; gap: 10px; height: 120px; margin-bottom: 10px; }
+        .temp-bar-bg { width: 20px; height: 100%; background: #333; border-radius: 10px; position: relative; overflow: hidden; border: 1px solid #555; }
+        .temp-bar-fill { 
+            position: absolute; bottom: 0; width: 100%; 
+            background: var(--temp-color); 
+            height: 0%; /* Se modifica con JS */
+            transition: 0.5s; 
+        }
+        .temp-value { font-size: 1.5rem; font-weight: bold; color: var(--temp-color); }
+        .temp-label { font-size: 0.8rem; color: #888; }
+
+        /* --- VISUALIZACIÓN HUMEDAD (Donut Chart) --- */
+        .donut-chart {
+            position: relative;
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            /* El gradiente cónico crea el gráfico. --p es el porcentaje */
+            background: conic-gradient(var(--hum-color) var(--p, 0%), #444 0%);
+            display: flex; justify-content: center; align-items: center;
+            transition: 0.5s;
+            box-shadow: 0 0 15px rgba(0,0,0,0.3);
+        }
+        .donut-hole {
+            width: 75%; height: 75%;
+            background-color: var(--bg-card);
+            border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            flex-direction: column;
+        }
+        .hum-value { font-size: 1.2rem; font-weight: bold; color: var(--hum-color); }
+        .hum-label { font-size: 0.7rem; color: #888; }
+
+        .dht-layout { display: flex; width: 100%; justify-content: space-around; align-items: center; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Práctica 12: Sensor DHT11</h1>
+
+    <div class="grid-container">
+        
+        <div class="card">
+            <h3>🔌 Monitor Serie</h3>
+            <button class="btn-connect" onclick="initSerialConnection()">🔌 Conectar USB</button>
+            <div id="status-msg" style="color: #888;">Desconectado</div>
+            <div id="terminal">Esperando datos...</div>
+        </div>
+
+        <div class="card">
+            <h3>🌡️ Temp & Humedad</h3>
+            
+            <div class="dht-layout">
+                
+                <div style="display:flex; flex-direction:column; align-items:center;">
+                    <div class="temp-wrapper">
+                        <div style="display:flex; flex-direction:column; justify-content:space-between; height:100%; font-size:0.6rem; color:#666;">
+                            <span>50º</span><span>25º</span><span>0º</span>
+                        </div>
+                        <div class="temp-bar-bg">
+                            <div id="temp-fill" class="temp-bar-fill"></div>
+                        </div>
+                    </div>
+                    <div id="val-temp" class="temp-value">0.0</div>
+                    <div class="temp-label">Grados (ºC)</div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; align-items:center;">
+                    <div id="hum-donut" class="donut-chart">
+                        <div class="donut-hole">
+                            <div id="val-hum" class="hum-value">0%</div>
+                        </div>
+                    </div>
+                    <div class="hum-label" style="margin-top:15px;">Humedad (%)</div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let port, reader;
+
+        // --- CONEXIÓN ---
+        async function initSerialConnection() {
+            if (!("serial" in navigator)) return alert("Usa Chrome o Edge.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const decoder = new TextDecoderStream(); port.readable.pipeTo(decoder.writable); reader = decoder.readable.getReader();
+                
+                document.getElementById("status-msg").innerText = "CONECTADO ✅";
+                document.getElementById("status-msg").style.color = "#00ff00";
+                readLoop();
+            } catch (err) { printLog("Error: " + err.message); }
+        }
+
+        // --- LECTURA ---
+        async function readLoop() {
+            while (true) {
+                try {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) handleData(value);
+                } catch (err) { break; }
+            }
+        }
+
+        // --- PROCESAMIENTO ---
+        let inputBuffer = "";
+        function handleData(text) {
+            inputBuffer += text;
+            let start = inputBuffer.indexOf('<');
+            let end = inputBuffer.indexOf('>');
+
+            while (start !== -1 && end !== -1) {
+                if (end > start) {
+                    let msg = inputBuffer.substring(start + 1, end);
+                    processCommand(msg);
+                    inputBuffer = inputBuffer.substring(end + 1);
+                } else { inputBuffer = inputBuffer.substring(start); }
+                start = inputBuffer.indexOf('<'); end = inputBuffer.indexOf('>');
+            }
+        }
+
+        // --- LÓGICA VISUAL ---
+        function processCommand(msg) {
+            // Separa Clave:Valor
+            let parts = msg.split(':');
+            if (parts.length !== 2) return;
+
+            let key = parts[0];
+            let val = parseFloat(parts[1]);
+
+            if (key === "DHT11T") {
+                // Actualizar Temperatura
+                document.getElementById("val-temp").innerText = val + "º";
+                
+                // Mapear: 0ºC es 0%, 50ºC es 100% de la barra
+                let porcentaje = (val / 50) * 100;
+                if (porcentaje > 100) porcentaje = 100;
+                document.getElementById("temp-fill").style.height = porcentaje + "%";
+                
+                printLog("Temp: " + val + "ºC");
+
+            } else if (key === "DHT11H") {
+                // Actualizar Humedad
+                document.getElementById("val-hum").innerText = Math.round(val) + "%";
+                
+                // Actualizar gráfico circular (Variable CSS --p)
+                document.getElementById("hum-donut").style.setProperty('--p', val + "%");
+                
+                printLog("Hum: " + val + "%");
+            }
+        }
+
+        function printLog(text) {
+            const term = document.getElementById("terminal");
+            term.innerHTML += `RX: ${text}<br>`;
+            term.scrollTop = term.scrollHeight;
+        }
+    </script>
+</body>
+</html>

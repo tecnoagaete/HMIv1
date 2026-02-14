@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>P13: Receptor IR</title>
+    <style>
+        /* ESTILOS ROBUSTOS v3.34 */
+        :root { --bg-body:#1a1a2e; --bg-card:#16213e; --text-main:#fff; --text-accent:#e94560; --ir-color:#aa00ff; --terminal-bg:#0f0f1a; --terminal-text:#00ff00; }
+        body { font-family:'Segoe UI', sans-serif; background:var(--bg-body); color:var(--text-main); text-align:center; padding:20px; }
+        h1 { border-bottom:2px solid var(--text-accent); display:inline-block; padding-bottom:10px; }
+        .grid-container { display:flex; justify-content:center; gap:30px; margin-top:30px; flex-wrap:wrap; }
+        .card { background:var(--bg-card); border:1px solid #333; border-radius:12px; padding:20px; width:300px; display:flex; flex-direction:column; align-items:center; }
+        button.btn-connect { background:var(--text-accent); color:white; border:none; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; margin-bottom:10px; font-size:1rem; }
+        #terminal { background:var(--terminal-bg); color:var(--terminal-text); height:150px; width:100%; overflow-y:auto; font-family:'Courier New', monospace; font-size: 0.9rem; text-align:left; padding:10px; border:1px solid #555; white-space: pre-wrap; }
+        .ir-screen { width: 100%; height: 100px; background: black; color: var(--ir-color); font-family: monospace; overflow-y: auto; text-align: left; padding: 5px; border: 1px solid #555; }
+        .sensor-icon { font-size: 2rem; color: #555; transition: 0.1s; margin-bottom: 10px; }
+        .sensor-icon.active { color: var(--ir-color); text-shadow: 0 0 15px var(--ir-color); }
+    </style>
+</head>
+<body>
+    <h1>Práctica 13: Receptor IR (D6)</h1>
+    <div class="grid-container">
+        <div class="card">
+            <h3>🔌 Conexión USB</h3>
+            <button class="btn-connect" onclick="conectarArduino()">🔌 CONECTAR</button>
+            <div id="terminal">System Ready...</div>
+        </div>
+        <div class="card">
+            <h3>📡 Decodificador</h3>
+            <div id="ir-sensor" class="sensor-icon">📡</div>
+            <div id="ir-log" class="ir-screen">Esperando señal...</div>
+            <button onclick="limpiar()" style="margin-top:10px; cursor:pointer;">Limpiar</button>
+        </div>
+    </div>
+    <script>
+        let port, reader;
+
+        async function conectarArduino() {
+            if (!("serial" in navigator)) return log("❌ Navegador no compatible.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const decoder = new TextDecoderStream(); port.readable.pipeTo(decoder.writable); reader = decoder.readable.getReader();
+                log("✅ ESCUCHANDO IR...");
+                leerDatos();
+            } catch (e) { log("⚠️ ERROR: " + e); }
+        }
+
+        async function leerDatos() {
+            while (true) {
+                try {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) procesarTexto(value);
+                } catch (e) { log("Error lectura: " + e); break; }
+            }
+        }
+
+        let buffer = "";
+        function procesarTexto(texto) {
+            buffer += texto;
+            let start = buffer.indexOf('<');
+            let end = buffer.indexOf('>');
+            
+            while (start !== -1 && end !== -1) {
+                if (end > start) {
+                    let mensaje = buffer.substring(start + 1, end);
+                    ejecutarComando(mensaje);
+                    buffer = buffer.substring(end + 1);
+                } else { buffer = buffer.substring(start); }
+                start = buffer.indexOf('<'); end = buffer.indexOf('>');
+            }
+        }
+
+        function ejecutarComando(msg) {
+            let parts = msg.split(':');
+            if (parts[0] === "IR") {
+                let codigo = parts[1];
+                log("RX < IR: " + codigo); // Terminal de sistema
+                
+                // Pantalla Hacker
+                const screen = document.getElementById("ir-log");
+                const div = document.createElement("div");
+                div.textContent = "> " + codigo;
+                screen.appendChild(div);
+                screen.scrollTop = screen.scrollHeight;
+
+                // Flash visual
+                const icon = document.getElementById("ir-sensor");
+                icon.classList.add("active");
+                setTimeout(() => icon.classList.remove("active"), 100);
+            }
+        }
+
+        function log(msg) {
+            const term = document.getElementById("terminal");
+            const div = document.createElement("div");
+            div.textContent = msg;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+        }
+        function limpiar() { document.getElementById("ir-log").innerHTML = ""; }
+    </script>
+</body>
+</html>

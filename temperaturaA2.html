@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P10: Temp LM35</title>
+    <style>
+        /* --- ESTILOS COMUNES v3.33 --- */
+        :root {
+            --bg-body: #1a1a2e; --bg-card: #16213e; --text-main: #ffffff; --text-accent: #e94560; --border: #333;
+            --terminal-bg: #0f0f1a; --terminal-text: #00ff00; --terminal-tx: #00d2ff;
+            --temp-a2-color: #e53935; 
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-body); color: var(--text-main); margin: 0; padding: 20px; text-align: center; min-width: 800px; }
+        h1 { border-bottom: 2px solid var(--text-accent); padding-bottom: 10px; display: inline-block; }
+
+        .grid-container { display: flex; justify-content: center; gap: 30px; margin-top: 30px; flex-wrap: wrap; }
+        .card { background-color: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .card h3 { color: var(--text-accent); margin: 0 0 15px 0; border-bottom: 1px solid var(--border); width: 100%; padding-bottom: 10px; font-size: 1.2rem; }
+
+        button.btn-connect { background-color: var(--text-accent); color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-bottom: 10px; }
+        #terminal { background-color: var(--terminal-bg); color: var(--terminal-text); font-family: 'Consolas', monospace; height: 180px; width: 100%; overflow-y: auto; padding: 10px; border: 1px solid #555; font-size: 0.9rem; text-align: left; border-radius: 4px; box-sizing: border-box; }
+
+        /* --- TERMÓMETRO REALISTA --- */
+        .thermometer-realistic { 
+            display: flex; align-items: flex-end; gap: 12px; height: 160px; margin-bottom: 10px; margin-top: 20px;
+        }
+        .thermo-scale { 
+            display: flex; flex-direction: column; justify-content: space-between; height: 130px; 
+            color: #888; font-size: 0.8rem; font-family: monospace; padding-bottom: 30px; 
+        }
+        .thermo-glass { 
+            position: relative; width: 22px; height: 130px; background: rgba(255,255,255,0.1); 
+            border-radius: 10px 10px 0 0; border: 2px solid #555; border-bottom: none; z-index: 2;
+        }
+        .thermo-liquid { 
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 12px; 
+            background: var(--temp-a2-color); border-radius: 5px 5px 0 0; transition: height 0.5s ease-out; 
+            height: 0%; box-shadow: 0 0 10px var(--temp-a2-color);
+        }
+        .thermo-bulb { 
+            width: 36px; height: 36px; background: var(--temp-a2-color); border-radius: 50%; 
+            border: 2px solid #555; margin-top: -8px; z-index: 1; box-shadow: 0 0 15px var(--temp-a2-color);
+        }
+        .temp-display { font-size: 1.8rem; font-weight: bold; color: var(--temp-a2-color); margin-top: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Práctica 10: Temp Analógica (LM35)</h1>
+
+    <div class="grid-container">
+        
+        <div class="card">
+            <h3>🔌 Monitor Serie</h3>
+            <button class="btn-connect" onclick="initSerialConnection()">🔌 Conectar USB</button>
+            <div id="status-msg" style="color: #888;">Desconectado</div>
+            <div id="terminal">System Ready...<br>Esperando datos...</div>
+        </div>
+
+        <div class="card">
+            <h3>🌡️ Sensor LM35 (A2)</h3>
+            
+            <div class="thermometer-realistic">
+                <div class="thermo-scale">
+                    <span>60ºC</span><span>40ºC</span><span>20ºC</span><span>0ºC</span>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <div class="thermo-glass"><div id="temp-a2-liquid" class="thermo-liquid"></div></div>
+                    <div class="thermo-bulb"></div>
+                </div>
+            </div>
+
+            <div id="temp-a2-val-text" class="temp-display">0.0ºC</div>
+            <p style="color:#aaa; font-size:0.8rem;">Toca el sensor para calentar</p>
+        </div>
+
+    </div>
+
+    <script>
+        let port, reader, isConnected = false;
+        let inputBuffer = "";
+
+        async function initSerialConnection() {
+            if (!("serial" in navigator)) return alert("Usa Chrome o Edge.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const decoder = new TextDecoderStream(); port.readable.pipeTo(decoder.writable); reader = decoder.readable.getReader();
+                
+                isConnected = true;
+                document.getElementById("status-msg").innerText = "CONECTADO ✅";
+                document.getElementById("status-msg").style.color = "#00ff00";
+                printToTerminal("Puerto abierto.");
+                readLoop();
+            } catch (err) { printToTerminal("Error: " + err.message); }
+        }
+
+        async function readLoop() {
+            while (true) {
+                try {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) handleData(value);
+                } catch (err) { break; }
+            }
+        }
+
+        function handleData(text) {
+            inputBuffer += text;
+            let start = inputBuffer.indexOf('<');
+            let end = inputBuffer.indexOf('>');
+
+            while (start !== -1 && end !== -1) {
+                if (end > start) {
+                    let msg = inputBuffer.substring(start + 1, end);
+                    processCommand(msg);
+                    inputBuffer = inputBuffer.substring(end + 1);
+                } else { inputBuffer = inputBuffer.substring(start); }
+                start = inputBuffer.indexOf('<'); end = inputBuffer.indexOf('>');
+            }
+        }
+
+        function processCommand(msg) {
+            let parts = msg.split(':');
+            
+            if (parts[0] === "TEMPA2" && parts.length === 2) {
+                let temperatura = parseFloat(parts[1]);
+
+                // 1. Actualizar texto y gráfico
+                document.getElementById("temp-a2-val-text").innerText = temperatura + "ºC";
+                let porcentajeAltura = (temperatura / 60) * 100;
+                if (porcentajeAltura > 100) porcentajeAltura = 100;
+                if (porcentajeAltura < 0) porcentajeAltura = 0;
+                document.getElementById("temp-a2-liquid").style.height = porcentajeAltura + "%";
+                
+                // 2. CORRECCIÓN: Escribir en el terminal (Ahora sí funcionará)
+                printToTerminal("Recibido: " + temperatura + " ºC");
+            }
+        }
+
+        function printToTerminal(text) {
+            const term = document.getElementById("terminal");
+            // Añadimos RX al principio para indicar recepción
+            term.innerHTML += `RX < ${text}<br>`;
+            term.scrollTop = term.scrollHeight;
+        }
+    </script>
+</body>
+</html>

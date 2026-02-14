@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>P2: LED Rojo D12</title>
+    <style>
+        /* ESTILOS ROBUSTOS v3.34 */
+        :root { --bg-body:#1a1a2e; --bg-card:#16213e; --text-main:#fff; --text-accent:#e94560; --led-off:#444; --led-red:#ff3333; --terminal-bg:#0f0f1a; --terminal-text:#00ff00; }
+        body { font-family:'Segoe UI', sans-serif; background:var(--bg-body); color:var(--text-main); text-align:center; padding:20px; }
+        h1 { border-bottom:2px solid var(--text-accent); display:inline-block; padding-bottom:10px; }
+        .grid-container { display:flex; justify-content:center; gap:30px; margin-top:30px; flex-wrap:wrap; }
+        .card { background:var(--bg-card); border:1px solid #333; border-radius:12px; padding:20px; width:300px; display:flex; flex-direction:column; align-items:center; }
+        button.btn-connect { background:var(--text-accent); color:white; border:none; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; margin-bottom:10px; font-size:1rem; }
+        button.btn-connect:hover { background: #ff577f; }
+        #terminal { background:var(--terminal-bg); color:var(--terminal-text); height:150px; width:100%; overflow-y:auto; font-family:'Courier New', monospace; font-size: 0.9rem; text-align:left; padding:10px; border:1px solid #555; white-space: pre-wrap; }
+        .led-indicator { width:60px; height:60px; border-radius:50%; background:var(--led-off); border:3px solid #666; transition:0.2s; margin:20px; box-shadow:inset 0 0 10px #000; }
+        .led-indicator.active { background:var(--led-red); box-shadow:0 0 25px var(--led-red); border-color:#fff; }
+        .switch { position:relative; width:60px; height:30px; } .switch input { opacity:0; }
+        .slider { position:absolute; top:0; left:0; right:0; bottom:0; background:#ccc; transition:.4s; border-radius:34px; cursor:pointer; }
+        .slider:before { position:absolute; content:""; height:22px; width:22px; left:4px; bottom:4px; background:white; transition:.4s; border-radius:50%; }
+        input:checked + .slider { background:var(--text-accent); } input:checked + .slider:before { transform:translateX(30px); }
+    </style>
+</head>
+<body>
+    <h1>Práctica 2: LED Rojo D12</h1>
+    <div class="grid-container">
+        <div class="card">
+            <h3>🔌 Conexión USB</h3>
+            <button class="btn-connect" onclick="conectarArduino()">🔌 CONECTAR</button>
+            <div id="terminal">System Ready...</div>
+        </div>
+        <div class="card">
+            <h3>💡 LED Rojo (D12)</h3>
+            <div id="led-visual" class="led-indicator"></div>
+            <label class="switch">
+                <input type="checkbox" id="sw-12" onchange="cambiarLed()">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    <script>
+        let port, writer;
+
+        async function conectarArduino() {
+            if (!("serial" in navigator)) return log("❌ Navegador no compatible.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const encoder = new TextEncoderStream(); encoder.readable.pipeTo(port.writable); writer = encoder.writable.getWriter();
+                log("✅ PUERTO ABIERTO");
+            } catch (e) { log("⚠️ ERROR: " + e); }
+        }
+
+        function cambiarLed() {
+            const estado = document.getElementById("sw-12").checked;
+            const led = document.getElementById("led-visual");
+            if (estado) {
+                led.classList.add("active");
+                enviarComando("<D12:ON>");
+            } else {
+                led.classList.remove("active");
+                enviarComando("<D12:OFF>");
+            }
+        }
+
+        async function enviarComando(txt) {
+            log("TX > " + txt); // Escribimos primero
+            if (writer) {
+                try { await writer.write(txt + "\n"); } catch (e) { log("❌ Error envío: " + e); }
+            } else { log("⚠️ No conectado"); }
+        }
+
+        function log(msg) {
+            const term = document.getElementById("terminal");
+            const div = document.createElement("div");
+            div.textContent = msg;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+        }
+    </script>
+</body>
+</html>

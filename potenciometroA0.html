@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>P8: Potenciómetro A0</title>
+    <style>
+        /* ESTILOS ROBUSTOS v3.34 */
+        :root { 
+            --bg-body:#1a1a2e; --bg-card:#16213e; --text-main:#fff; --text-accent:#e94560; 
+            --pot-color:#00e676; 
+            --terminal-bg:#0f0f1a; --terminal-text:#00ff00; 
+        }
+        body { font-family:'Segoe UI', sans-serif; background:var(--bg-body); color:var(--text-main); text-align:center; padding:20px; }
+        h1 { border-bottom:2px solid var(--text-accent); display:inline-block; padding-bottom:10px; }
+        
+        .grid-container { display:flex; justify-content:center; gap:30px; margin-top:30px; flex-wrap:wrap; }
+        .card { background:var(--bg-card); border:1px solid #333; border-radius:12px; padding:20px; width:300px; display:flex; flex-direction:column; align-items:center; }
+        
+        button.btn-connect { background:var(--text-accent); color:white; border:none; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; margin-bottom:10px; font-size:1rem; }
+        
+        #terminal { background:var(--terminal-bg); color:var(--terminal-text); height:150px; width:100%; overflow-y:auto; font-family:'Courier New', monospace; font-size: 0.9rem; text-align:left; padding:10px; border:1px solid #555; white-space: pre-wrap; }
+
+        /* GAUGE SVG PERFECTO */
+        .gauge-svg { width: 220px; height: 120px; }
+        .gauge-bg { fill: none; stroke: #333; stroke-width: 15; stroke-linecap: round; }
+        .gauge-needle { stroke: var(--pot-color); stroke-width: 5; stroke-linecap: round; transform-origin: 110px 100px; transition: transform 0.1s ease-out; }
+        .gauge-pivot { fill: #fff; }
+
+        .value-text { font-size:2.5rem; font-weight:bold; color:var(--pot-color); font-family:monospace; margin-top:-10px; }
+    </style>
+</head>
+<body>
+
+    <h1>Práctica 8: Potenciómetro (A0)</h1>
+
+    <div class="grid-container">
+        <div class="card">
+            <h3>🔌 Conexión USB</h3>
+            <button class="btn-connect" onclick="conectarArduino()">🔌 CONECTAR</button>
+            <div id="terminal">Esperando movimiento...</div>
+        </div>
+
+        <div class="card">
+            <h3>🎚️ Entrada Analógica</h3>
+            
+            <svg class="gauge-svg" viewBox="0 0 220 120">
+                <path class="gauge-bg" d="M 30 100 A 80 80 0 0 1 190 100" />
+                
+                <line id="needle" class="gauge-needle" x1="110" y1="100" x2="110" y2="30" />
+                
+                <circle class="gauge-pivot" cx="110" cy="100" r="8" />
+            </svg>
+            
+            <div id="pot-val" class="value-text">0</div>
+            <p style="color:#aaa; font-size:0.8rem;">Rango: 0 - 1023</p>
+        </div>
+    </div>
+
+    <script>
+        let port, reader;
+
+        // --- 1. CONEXIÓN ---
+        async function conectarArduino() {
+            if (!("serial" in navigator)) return log("❌ Navegador no compatible.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const decoder = new TextDecoderStream(); 
+                port.readable.pipeTo(decoder.writable); 
+                reader = decoder.readable.getReader();
+                
+                log("✅ LEUYENDO POTENCIÓMETRO...");
+                leerDatos();
+            } catch (e) { log("⚠️ ERROR: " + e); }
+        }
+
+        // --- 2. BUCLE DE LECTURA ---
+        async function leerDatos() {
+            while (true) {
+                try {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) procesarTexto(value);
+                } catch (e) { log("Error lectura: " + e); break; }
+            }
+        }
+
+        // --- 3. PARSEADO ---
+        let buffer = "";
+        function procesarTexto(texto) {
+            buffer += texto;
+            let start = buffer.indexOf('<');
+            let end = buffer.indexOf('>');
+            
+            while (start !== -1 && end !== -1) {
+                if (end > start) {
+                    let mensaje = buffer.substring(start + 1, end);
+                    ejecutarComando(mensaje);
+                    buffer = buffer.substring(end + 1);
+                } else { buffer = buffer.substring(start); }
+                start = buffer.indexOf('<'); end = buffer.indexOf('>');
+            }
+        }
+
+        // --- 4. VISUALIZACIÓN ---
+        function ejecutarComando(msg) {
+            let parts = msg.split(':');
+            
+            if (parts[0] === "POT") {
+                let val = parseInt(parts[1]);
+                
+                // Actualizar Texto
+                document.getElementById("pot-val").innerText = val;
+                
+                // Actualizar Aguja SVG
+                // Mapeo: 0 = -90 grados, 1023 = +90 grados
+                let angulo = ((val / 1023) * 180) - 90;
+                
+                // Aplicamos rotación
+                document.getElementById("needle").style.transform = `rotate(${angulo}deg)`;
+
+                // Log solo si cambia
+                log("RX < POT: " + val);
+            }
+        }
+
+        // --- 5. LOG ROBUSTO ---
+        function log(msg) {
+            const term = document.getElementById("terminal");
+            // Limpieza automática para no saturar memoria
+            if (term.childElementCount > 50) term.removeChild(term.firstChild);
+            
+            const div = document.createElement("div");
+            div.textContent = msg;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+        }
+    </script>
+</body>
+</html>

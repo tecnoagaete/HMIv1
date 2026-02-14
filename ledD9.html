@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>P5: Control PWM D9</title>
+    <style>
+        /* ESTILOS ROBUSTOS v3.34 */
+        :root { 
+            --bg-body:#1a1a2e; --bg-card:#16213e; --text-main:#fff; --text-accent:#e94560; 
+            --led-off:#444; --led-red:#ff3333; 
+            --terminal-bg:#0f0f1a; --terminal-text:#00ff00; 
+        }
+        body { font-family:'Segoe UI', sans-serif; background:var(--bg-body); color:var(--text-main); text-align:center; padding:20px; }
+        h1 { border-bottom:2px solid var(--text-accent); display:inline-block; padding-bottom:10px; }
+        
+        .grid-container { display:flex; justify-content:center; gap:30px; margin-top:30px; flex-wrap:wrap; }
+        .card { background:var(--bg-card); border:1px solid #333; border-radius:12px; padding:20px; width:320px; display:flex; flex-direction:column; align-items:center; }
+        
+        button.btn-connect { background:var(--text-accent); color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; margin-bottom:10px; font-size:1rem; }
+        button.btn-connect:hover { background: #ff577f; }
+
+        #terminal { 
+            background:var(--terminal-bg); color:var(--terminal-text); 
+            height:150px; width:100%; overflow-y:auto; 
+            font-family:'Courier New', monospace; font-size: 0.9rem; 
+            text-align:left; padding:10px; border:1px solid #555; 
+            white-space: pre-wrap; 
+        }
+
+        .led-pwm { width:80px; height:80px; border-radius:50%; background:var(--led-off); border:4px solid #555; margin:15px 0; transition:0.1s; }
+
+        /* INTERRUPTOR */
+        .switch-container { margin: 10px 0; display:flex; align-items:center; gap:10px; }
+        .switch { position:relative; width:60px; height:30px; } 
+        .switch input { opacity:0; width:0; height:0; }
+        .slider-sw { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.4s; border-radius:34px; }
+        .slider-sw:before { position:absolute; content:""; height:22px; width:22px; left:4px; bottom:4px; background-color:white; transition:.4s; border-radius:50%; }
+        input:checked + .slider-sw { background-color: var(--text-accent); }
+        input:checked + .slider-sw:before { transform:translateX(30px); }
+
+        /* SLIDER */
+        input[type=range] { width:100%; margin:15px 0; cursor:pointer; }
+        .value-display { font-size:1.5rem; font-weight:bold; color:var(--led-red); font-family:monospace; }
+    </style>
+</head>
+<body>
+
+    <h1>Práctica 5: Control PWM D9</h1>
+
+    <div class="grid-container">
+        <div class="card">
+            <h3>🔌 Conexión USB</h3>
+            <button class="btn-connect" onclick="conectarArduino()">🔌 CONECTAR</button>
+            <div id="terminal">System Ready...</div>
+        </div>
+
+        <div class="card">
+            <h3>🔴 Led Rojo (D9)</h3>
+            <div id="led-visual" class="led-pwm"></div>
+
+            <div class="switch-container">
+                <span>OFF</span>
+                <label class="switch">
+                    <input type="checkbox" id="master-sw" onchange="clickInterruptor()">
+                    <span class="slider-sw"></span>
+                </label>
+                <span>ON (Max)</span>
+            </div>
+
+            <p style="color:#aaa; font-size:0.8rem; margin-top:10px;">Ajuste Fino:</p>
+            <input type="range" id="slider-pwm" min="2" max="255" value="0" oninput="moverSlider()">
+            
+            <div class="value-display" id="val-text">0</div>
+        </div>
+    </div>
+
+    <script>
+        let port, writer;
+
+        // --- 1. CONEXIÓN ---
+        async function conectarArduino() {
+            if (!("serial" in navigator)) return log("❌ Navegador no compatible.");
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                const encoder = new TextEncoderStream(); 
+                encoder.readable.pipeTo(port.writable); 
+                writer = encoder.writable.getWriter();
+                log("✅ PUERTO ABIERTO");
+            } catch (e) { log("⚠️ ERROR: " + e); }
+        }
+
+        // --- 2. CLICK EN INTERRUPTOR ---
+        function clickInterruptor() {
+            const sw = document.getElementById("master-sw");
+            const slider = document.getElementById("slider-pwm");
+            
+            if (sw.checked) {
+                // ENCENDER: Protocolo <PWM9:255>
+                // Visualmente ponemos el slider al máximo porque el LED estará al máximo
+                slider.value = 255;
+                actualizarVisual(255);
+                enviarComando("<PWM9:255>"); 
+            } else {
+                // APAGAR: Protocolo <PWM9:0>
+                slider.value = 0;
+                actualizarVisual(0);
+                enviarComando("<PWM9:0>");
+            }
+        }
+
+        // --- 3. MOVER SLIDER ---
+        function moverSlider() {
+            const sliderVal = document.getElementById("slider-pwm").value;
+            const sw = document.getElementById("master-sw");
+
+            // Si movemos el slider, asumimos que queremos encender
+            sw.checked = true;
+
+            actualizarVisual(sliderVal);
+            
+            // Envío normal del valor (ej: 128)
+            enviarComando("<PWM9:" + sliderVal + ">");
+        }
+
+        function actualizarVisual(val) {
+            document.getElementById("val-text").innerText = val;
+            const visual = document.getElementById("led-visual");
+
+            if (val > 0) {
+                const opacity = val / 255;
+                visual.style.backgroundColor = `rgba(255, 51, 51, ${opacity})`;
+                visual.style.boxShadow = `0 0 ${val/5}px rgba(255, 51, 51, ${opacity})`;
+                visual.style.borderColor = "#fff";
+            } else {
+                visual.style.backgroundColor = "#444";
+                visual.style.boxShadow = "none";
+                visual.style.borderColor = "#555";
+            }
+        }
+
+        // --- 4. ENVÍO ---
+        async function enviarComando(txt) {
+            log("TX > " + txt);
+            if (writer) {
+                try { await writer.write(txt + "\n"); } catch (e) { log("❌ Error envío: " + e); }
+            }
+        }
+
+        // --- 5. LOG ---
+        function log(msg) {
+            const term = document.getElementById("terminal");
+            const div = document.createElement("div");
+            div.textContent = msg;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+        }
+    </script>
+</body>
+</html>
